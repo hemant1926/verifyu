@@ -1,0 +1,252 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "darwin-arm64"]
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model otp {
+  id        String   @id @default(uuid()) @map("_id")
+  mode      String   @unique
+  otp       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model user {
+  id               String            @id @default(uuid()) @map("_id")
+  mobileno         String
+  email            String
+  photo            String
+  firstname        String
+  middlename       String
+  lastname         String
+  bloodType        String
+  dateofbirth      DateTime
+  aadharno         String
+  panno            String
+  currentAddress   String
+  permanentAddress String
+  token            String            @default("")
+  gender           String            @default("Male")
+  geolocation      Json[]
+  medicalhistory   String
+  allergydetails   String
+  emailVerifcation Boolean           @default(false)
+  emergencyDetails emergencyDetail[]
+  notification     Boolean           @default(true)
+  createddate      DateTime          @default(now())
+  updatedAt        DateTime          @default(now()) @updatedAt
+  status           Int
+  customerSupport  customerSupport[]
+  awsFace          awsFace[]
+  childDetails     childDetail[]
+  userSteps        userSteps?
+  stepsHistory     stepsHistory[]
+  userSubscriptions userSubscription[]
+  coinRedemptions  coinRedemption[]
+  coinRedemptionHistory coinRedemptionHistory[]
+
+  @@index(name: "mobileno_idx", [mobileno])
+  @@index(name: "email_idx", [email])
+}
+
+model emergencyDetail {
+  id          String @id @default(uuid()) @map("_id")
+  name        String
+  relation    String
+  phoneNumber String
+  others      String @default("")
+  user        user?  @relation(fields: [userId], references: [id])
+  userId      String
+
+  @@index(name: "phoneNumber_idx", [phoneNumber])
+}
+
+model admin {
+  id          String   @id @default(uuid()) @map("_id")
+  name        String
+  email       String   @unique
+  userName    String   @unique
+  mobileno    String
+  password    String
+  role        Int      @default(2)
+  createddate DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  status      Int      @default(1)
+}
+
+model customerSupport {
+  id          String   @id @default(uuid()) @map("_id")
+  user        user?    @relation(fields: [userId], references: [id])
+  userId      String
+  subjects    String
+  message     String
+  file        String
+  createddate DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  status      Int      @default(1)
+
+  @@index([userId], name: "userId_idx")
+}
+
+model awsFace {
+  id          String   @id @default(uuid()) @map("_id")
+  userId      String   @unique
+  faceIds     Json[]
+  createddate DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  status      Int      @default(1)
+  user        user     @relation(fields: [userId], references: [id])
+}
+
+
+model childDetail {
+  id               String @id @default(uuid()) @map("_id")
+  firstname        String
+  middlename       String
+  lastname         String
+  gender           String            @default("Male")
+  dateofbirth      DateTime
+  bloodType        String
+  aadharno         String
+  photo            String
+  medicalhistory   String
+  allergydetails   String
+  user             user?  @relation(fields: [userId], references: [id])
+  userId           String
+}
+
+model stepsConfig {
+  id                    String   @id @default(uuid()) @map("_id")
+  threshold_steps       Int      @default(10000)
+  coins_per_threshold   Int      @default(2)
+  coin_value_in_rupees  Int      @default(0)
+  max_coins_per_day     Int      @default(0)
+  coin_value_in_usd     Int      @default(0)
+  reset_policy          String   @default("continuous")
+  is_active             Boolean  @default(true)
+  createddate           DateTime @default(now())
+  updatedAt             DateTime @default(now()) @updatedAt
+}
+
+model userSteps {
+  id               String   @id @default(uuid()) @map("_id")
+  userId           String   @unique
+  user             user     @relation(fields: [userId], references: [id])
+  total_steps      Int      @default(0)
+  current_steps    Int      @default(0)
+  total_coins      Int      @default(0)
+  last_threshold   Int      @default(0)
+  redeemed_coins   Int      @default(0)
+  available_coins  Int      @default(0)
+  redeemed_limit_per_day Int @default(0)
+  redeemed_today   Int      @default(0)
+  is_redeem_blocked Boolean @default(false)
+  block_reason     String   @default("")
+  last_redeem_at   DateTime?
+  pending_redeem   Int      @default(0)
+  createddate      DateTime @default(now())
+  updatedAt        DateTime @default(now()) @updatedAt
+}
+
+model stepsHistory {
+  id          String   @id @default(uuid()) @map("_id")
+  userId      String
+  user        user     @relation(fields: [userId], references: [id])
+  date        DateTime
+  steps       Int      @default(0)
+  coins_earned Int     @default(0)
+  createddate DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@unique([userId, date], name: "unique_user_date")
+}
+
+model subscriptionPlan {
+  id                String   @id @default(uuid()) @map("_id")
+  name              String
+  description       String
+  price             Float
+  currency          String   @default("USD")
+  duration_days     Int
+  features          Json[]
+  is_active         Boolean  @default(true)
+  createddate       DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+  userSubscriptions userSubscription[]
+}
+
+model userSubscription {
+  id                String            @id @default(uuid()) @map("_id")
+  userId            String
+  user              user              @relation(fields: [userId], references: [id])
+  planId            String
+  plan              subscriptionPlan  @relation(fields: [planId], references: [id])
+  startDate         DateTime
+  endDate           DateTime
+  status            String            @default("active") // active, expired, cancelled
+  paymentStatus     String            @default("pending") // pending, paid, failed, refunded
+  paymentId         String?
+  paymentMethod     String?
+  autoRenew         Boolean           @default(false)
+  createddate       DateTime          @default(now())
+  updatedAt         DateTime          @default(now()) @updatedAt
+
+  @@index([userId], name: "user_subscription_userId_idx")
+  @@index([planId], name: "user_subscription_planId_idx")
+  @@index([status], name: "user_subscription_status_idx")
+}
+
+model coinRedemption {
+  id                String   @id @default(uuid()) @map("_id")
+  userId            String
+  user              user     @relation(fields: [userId], references: [id])
+  coins_requested   Int
+  coins_approved    Int      @default(0)
+  amount_requested  Float
+  amount_approved   Float    @default(0)
+  currency          String   @default("USD")
+  status            String   @default("pending") // pending, approved, rejected, completed
+  request_type      String   @default("cash") // cash, gift_card, product, donation
+  payment_method    String?  // bank_transfer, paypal, gift_card, etc.
+  payment_details   Json?    // Additional payment details
+  admin_notes       String?  // Admin notes for approval/rejection
+  processed_by      String?  // Admin ID who processed the request
+  processed_at      DateTime?
+  createddate       DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+  history           coinRedemptionHistory[]
+
+  @@index([userId], name: "coin_redemption_userId_idx")
+  @@index([status], name: "coin_redemption_status_idx")
+  @@index([request_type], name: "coin_redemption_type_idx")
+}
+
+model coinRedemptionHistory {
+  id                String   @id @default(uuid()) @map("_id")
+  userId            String
+  user              user     @relation(fields: [userId], references: [id])
+  redemptionId      String
+  redemption        coinRedemption @relation(fields: [redemptionId], references: [id])
+  action            String   // created, approved, rejected, completed, cancelled
+  coins_amount      Int
+  amount_value      Float
+  currency          String
+  notes             String?
+  performed_by      String?  // Admin ID or system
+  createddate       DateTime @default(now())
+
+  @@index([userId], name: "coin_redemption_history_userId_idx")
+  @@index([redemptionId], name: "coin_redemption_history_redemptionId_idx")
+  @@index([action], name: "coin_redemption_history_action_idx")
+}

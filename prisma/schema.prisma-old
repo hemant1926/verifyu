@@ -1,0 +1,121 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model otp {
+  id        String   @id @default(uuid()) @map("_id")
+  mode      String   @unique
+  otp       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model user {
+  id               String            @id @default(uuid()) @map("_id")
+  mobileno         String
+  email            String
+  photo            String
+  firstname        String
+  middlename       String
+  lastname         String
+  bloodType        String
+  dateofbirth      DateTime
+  aadharno         String
+  panno            String
+  currentAddress   String
+  permanentAddress String
+  token            String            @default("")
+  gender           String            @default("Male")
+  geolocation      Json[]
+  medicalhistory   String
+  allergydetails   String
+  emailVerifcation Boolean           @default(false)
+  emergencyDetails emergencyDetail[]
+  notification     Boolean           @default(true)
+  createddate      DateTime          @default(now())
+  updatedAt        DateTime          @default(now()) @updatedAt
+  status           Int
+  customerSupport  customerSupport[]
+  awsFace          awsFace[]
+  childDetails     childDetails[]
+
+  @@index(name: "mobileno_idx", [mobileno])
+  @@index(name: "email_idx", [email])
+}
+
+model emergencyDetail {
+  id          String @id @default(uuid()) @map("_id")
+  name        String
+  relation    String
+  phoneNumber String
+  others      String @default("")
+  user        user?  @relation(fields: [userId], references: [id])
+  userId      String
+
+  @@index(name: "phoneNumber_idx", [phoneNumber])
+}
+
+model admin {
+  id          String   @id @default(uuid()) @map("_id")
+  name        String
+  email       String   @unique
+  userName    String   @unique
+  mobileno    String
+  password    String
+  role        Int      @default(2)
+  createddate DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  status      Int      @default(1)
+}
+
+model customerSupport {
+  id          String   @id @default(uuid()) @map("_id")
+  user        user?    @relation(fields: [userId], references: [id])
+  userId      String
+  subjects    String
+  message     String
+  file        String
+  createddate DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  status      Int      @default(1)
+
+  @@index([userId], name: "userId_idx")
+}
+
+model awsFace {
+  id          String   @id @default(uuid()) @map("_id")
+  userId      String   @unique
+  faceIds     Json[]
+  createddate DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  status      Int      @default(1)
+  user        user     @relation(fields: [userId], references: [id])
+}
+
+
+model childDetails {
+  id               String @id @default(uuid()) @map("_id")
+  firstname        String
+  middlename       String
+  lastname         String
+  gender           String            @default("Male")
+  dateofbirth      DateTime
+  bloodType        String
+  aadharno         String
+  photo            String
+  medicalhistory   String
+  allergydetails   String
+  user             user?  @relation(fields: [userId], references: [id])
+  userId           String
+}

@@ -1,0 +1,175 @@
+import { verifyToken } from "@/helper/jwtConfig";
+import validator from "@/helper/validate";
+import { PrismaClient } from "@prisma/client";
+import { DeleteImage, StoreImage } from "@/helper/store-image";
+
+const prisma = new PrismaClient();
+
+/**
+ * Handles DELETE request to delete a child detail by its ID.
+ * 
+ * @param {Request} req - The request object.
+ * @returns {Promise<Response>} - A promise that resolves to a Response object.
+ */
+export async function DELETE(req) {
+  try {
+
+    // const tokenData = await verifyToken();
+    // if (!tokenData.success) {
+    //   return Response.json(tokenData);
+    // }
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    const ValidatorRules = {
+      id: "required",
+    };
+
+    const { error, status } = await new Promise((resolve) => {
+      validator({ id }, ValidatorRules, {}, (error, status) => {
+        resolve({ error, status });
+      });
+    });
+
+    if (!status) {
+      return Response.json({
+        success: false,
+        message: "Validation error",
+        data: { ...error.errors },
+      });
+    }
+
+    // Find the childDetail by ID
+    const childDetail = await prisma.childDetail.findUnique({
+      where: {
+        id: id,
+      },
+    });
+
+    if (!childDetail) {
+      return Response.json({
+        success: false,
+        message: "Child detail not found",
+        data: {},
+      });
+    }
+
+    // Delete the childDetail
+    await prisma.childDetail.delete({
+      where: {
+        id: id,
+      },
+    });
+
+    // Return success response
+    return Response.json({
+      success: true,
+      message: "Child detail deleted successfully",
+      data: {},
+    });
+  } catch (error) {
+    console.error("Error deleting child detail:", error);
+    return Response.json({
+      success: false,
+      message: error.message,
+      data: {},
+    });
+  }
+}
+
+
+export async function PUT(req) {
+  try {
+
+    const tokenData = await verifyToken();
+    if (!tokenData.success) {
+      return Response.json(tokenData);
+    }
+
+    const { searchParams } = new URL(req.url);
+    const formData = await req.formData();
+    const id = formData.get("id");
+   
+
+    var firstImgPath ="";
+    if (formData.get("photo") != null) {
+      const photo = formData.get("photo");
+      // Find the existing photo path to delete it
+   
+      // Store the new photo and update userData with the new path
+      firstImgPath = await StoreImage({
+        image: photo,
+        path: "users",
+        id: tokenData.data.id,
+      });
+    }
+
+
+    const childDetail = await prisma.childDetail.findUnique({
+      where: {
+        id: id,
+      },
+    });
+
+    if (!childDetail) {
+      const newChildDetail = await prisma.childDetail.create({
+        data: {
+        
+          firstname: formData.get("firstname"), // Replace with meaningful defaults or data from the request
+          middlename: formData.get("middlename"),
+          lastname: formData.get("lastname"),
+          gender: formData.get("gender"),
+          dateofbirth: new Date(formData.get("dateofbirth")).toISOString(), // Replace with actual data
+          bloodType: formData.get("bloodType"),
+          aadharno: formData.get("aadharno"), // Replace with actual data
+          photo: firstImgPath, // Replace if you want to store a default photo
+          medicalhistory: "None",
+          allergydetails: "None",
+          userId:tokenData.data.id
+        },
+      });
+    }else{
+          // Delete the childDetail
+          await prisma.childDetail.delete({
+              where: {
+              id: id,
+             },
+           });
+
+           const newChildDetails = await prisma.childDetail.create({
+            data: {
+            
+              firstname: formData.get("firstname"), // Replace with meaningful defaults or data from the request
+              middlename: formData.get("middlename"),
+              lastname: formData.get("lastname"),
+              gender: formData.get("gender"),
+              dateofbirth: new Date(formData.get("dateofbirth")).toISOString(), // Replace with actual data
+              bloodType: formData.get("bloodType"),
+              aadharno: formData.get("aadharno"), // Replace with actual data
+              photo: firstImgPath, // Replace if you want to store a default photo
+              medicalhistory: "None",
+              allergydetails: "None",
+              userId:tokenData.data.id
+            },
+          });
+
+    }
+
+ 
+
+    // Return success response
+    return Response.json({
+      success: true,
+      message: "Child detail updated successfully",
+      data: {},
+    });
+  } catch (error) {
+    console.error("Error updating child detail:", error);
+    return Response.json({
+      success: false,
+      message: error.message,
+      data: {},
+    });
+  }
+}

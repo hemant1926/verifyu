@@ -1,0 +1,471 @@
+import { deleteFaces } from "@/helper/awsRekognition";
+import { verifyToken } from "@/helper/jwtConfig";
+import { decrypt } from "@/helper/security";
+import { DeleteImage, StoreImage } from "@/helper/store-image";
+import validator from "@/helper/validate";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+/**
+ * Handles the POST request to register a new user.
+ * Validates the incoming request data, stores user photo, and creates a new user record in the database.
+ * 
+ * @param {Request} req - The incoming request object containing user data and photo.
+ * @returns {Response} A JSON response indicating the result of the user registration process.
+ */
+export async function POST(req) {
+  try {
+    // Parse and validate form data
+    const formData = await req.formData();
+
+    const ValidatorRules = {
+      mobileno: "required",
+      firstname: "required",
+      lastname: "required",
+      bloodType: "required",
+      dateofbirth: "required",
+      aadharno: "required",
+      currentAddress: "required",
+      permanentAddress: "required",
+      geolocation: "required",
+      emergencyDetails: "required",
+      email: "required",
+      fcmToken: "required",
+    };
+
+    // Validate form data against predefined rules
+    const { error, status } = await new Promise((resolve) => {
+      validator(
+        { ...Object.fromEntries(formData) },
+        ValidatorRules,
+        {},
+        (error, status) => {
+          resolve({ error, status });
+        }
+      );
+    });
+
+    // Respond with validation errors if any
+    if (!status) {
+      return Response.json({
+        success: false,
+        message: "validation error",
+        data: { ...error.errors },
+      });
+    }
+
+    // Check for the presence of a photo in the form data
+    const photo = formData.get("photo");
+    if (!photo) {
+      return Response.json({
+        success: false,
+        message: "Please provide a photo",
+      });
+    }
+
+    // Insert new user record into the database
+    const insertResponse = await prisma.user.create({
+      data: {
+        mobileno: formData.get("mobileno"),
+        firstname: formData.get("firstname"),
+        middlename: formData.get("middlename"),
+        lastname: formData.get("lastname"),
+        bloodType: formData.get("bloodType"),
+        dateofbirth: new Date(formData.get("dateofbirth")).toISOString(),
+        aadharno: formData.get("aadharno"),
+        panno: formData.get("panno"),
+        email: formData.get("email"),
+        photo: "",
+        token: formData.get("fcmToken"),
+        currentAddress: formData.get("currentAddress"),
+        permanentAddress: formData.get("permanentAddress"),
+        geolocation: JSON.parse(formData.get("geolocation")),
+        medicalhistory: formData.get("medicalhistory"),
+        allergydetails: formData.get("allergydetails"),
+        status: 1,
+        emergencyDetails: {
+          create: JSON.parse(formData.get("emergencyDetails")),
+        },
+        childDetails: {
+          create: JSON.parse(formData.get("childDetails")),
+        }
+      },
+    });
+
+    // Handle error in user creation
+    if (!insertResponse) {
+      return Response.json({
+        message: {
+          response: "Error inserting Data",
+          DataInserted: {},
+        },
+        success: false,
+      });
+    }
+
+    // Store user photo and update user record with photo path
+    const imagePath = await StoreImage({
+      image: photo,
+      path: "users",
+      id: insertResponse.id,
+    });
+
+    await prisma.user.update({
+      where: {
+        id: insertResponse.id,
+      },
+      data: {
+        photo: imagePath,
+      },
+    });
+
+    // Respond with success message and user ID
+    return Response.json({
+      message: "User registered successfully",
+      data: {
+        userId: insertResponse.id,
+        // token,
+      },
+      success: true,
+    });
+  } catch (error) {
+    // Log and respond with error
+    console.error(error);
+    return Response.json({
+      message: error.message,
+      success: false,
+      data: {},
+    });
+  }
+}
+
+/**
+ * Handles the GET request to fetch the user details.
+ * Verifies the JWT token from the request headers and fetches the user details.
+ * 
+ * @returns {Response} A JSON response containing the user details or an error message.
+ */
+export async function GET() {
+  try {
+    // Verify the JWT token from the request headers
+    const tokenData = await verifyToken();
+
+    if (!tokenData.success) {
+      // If the token verification fails, return an error message
+      return Response.json(tokenData);
+    }
+
+    // Fetch the user details from the database
+    const userDetails = await prisma.user.findUnique({
+      where: {
+        id: tokenData.data.id,
+        status: 1,
+      },
+      include: {
+        // Include the emergency details of the user
+        emergencyDetails: true,
+        childDetails: true
+      },
+    });
+
+    if (!userDetails) {
+      // If the user details are not found, return an error message
+      return Response.json({
+        message: "User not found",
+        success: false,
+        data: {},
+      });
+    }
+
+    // Return the user details in the response
+    return Response.json({
+      message: "User details fetched successfully",
+      success: true,
+      data: userDetails,
+    });
+  } catch (error) {
+    // Log and respond with error
+    console.error(error);
+    return Response.json({
+      message: error.message,
+      success: false,
+      data: {},
+    });
+  }
+}
+
+/**
+ * Updates user details based on the provided request data.
+ * 
+ * This function handles updating user information including personal details,
+ * medical history, and profile photo. It first validates the user's token,
+ * then processes the form data submitted. If a photo is provided, the existing
+ * photo is deleted, and the new one is stored. Finally, it updates the user's
+ * details in the database including emergency details and returns the updated
+ * user details.
+ * 
+ * @param {Request} req - The request object containing formData with user details.
+ * @returns {Response} - A JSON response with the status of the operation and updated user details.
+ */
+export async function PUT(req) {
+  try {
+    // Verify user's token
+    const tokenData = await verifyToken();
+    if (!tokenData.success) {
+      // If token verification failed, return the error response
+      return Response.json(tokenData);
+    }
+
+    // Process form data from the request
+    const formData = await req.formData();
+
+    // Construct user data object from form data
+    const userData = {
+      mobileno: formData.get("mobileno"),
+      firstname: formData.get("firstname"),
+      middlename: formData.get("middlename"),
+      lastname: formData.get("lastname"),
+      bloodType: formData.get("bloodType"),
+      dateofbirth: new Date(formData.get("dateofbirth")).toISOString(),
+      aadharno: formData.get("aadharno"),
+      panno: formData.get("panno"),
+      email: formData.get("email"),
+      token: formData.get("fcmToken"),
+      currentAddress: formData.get("currentAddress"),
+      permanentAddress: formData.get("permanentAddress"),
+      geolocation: JSON.parse(formData.get("geolocation")),
+      medicalhistory: formData.get("medicalhistory"),
+      allergydetails: formData.get("allergydetails"),
+      status: 1,
+    };
+
+    // Handle profile photo update if provided
+    if (formData.get("photo") != null) {
+      const photo = formData.get("photo");
+      // Find the existing photo path to delete it
+      const firstImgPath = await prisma.user.findUnique({
+        where: {
+          id: tokenData.data.id,
+        },
+        select: {
+          photo: true,
+        },
+      });
+      // Delete the existing photo
+      await DeleteImage({
+        image: firstImgPath.photo,
+      });
+      // Store the new photo and update userData with the new path
+      const imagePath = await StoreImage({
+        image: photo,
+        path: "users",
+        id: tokenData.data.id,
+      });
+      userData.photo = imagePath;
+    }
+
+    // Delete existing emergency details to replace with new ones
+    await prisma.emergencyDetail.deleteMany({
+      where: {
+        userId: tokenData.data.id,
+      },
+    });
+
+    let childDetails = [];
+
+    for(let child of JSON.parse(form.get("childDetails"))) {
+      if (child.photo != null) {
+        let photo = child.photo;
+        // Find the existing photo path to delete it
+        const childImgPath = await prisma.childDetail.findUnique({
+          where: {
+            id: child.id,
+          },
+          select: {
+            photo: true,
+          },
+        });
+        // Delete the existing photo
+        await DeleteImage({
+          image: childImgPath.photo,
+        });
+
+        // Store the new photo and update userData with the new path
+        const imagePath = await StoreImage({
+          image: photo,
+          path: "users",
+          id: child.id,
+        });
+        child.photo = imagePath;
+      }
+      childDetails.push(child);
+    }
+    
+
+    // Delete existing child details to replace with new ones
+    await prisma.childDetail.deleteMany({
+      where: {
+        userId: tokenData.data.id,
+      },
+    });
+
+    // Update user details in the database, including creating new emergency details
+    const userDetails = await prisma.user.update({
+      where: {
+        id: tokenData.data.id,
+        status: 1,
+      },
+      data: {
+        ...userData,
+        emergencyDetails: {
+          create: JSON.parse(formData.get("emergencyDetails")),
+        },
+        childDetails: {
+          create: childDetails,
+        },
+      },
+      include: {
+        emergencyDetails: true,
+        childDetails: true,
+      },
+    });
+
+    // Return the updated user details
+    return Response.json({
+      message: "User details fetched successfully",
+      success: true,
+      data: userDetails,
+    });
+  } catch (error) {
+    // Log and respond with the error
+    console.error("error", error);
+    return Response.json({
+      message: error.message,
+      success: false,
+      data: {},
+    });
+  }
+}
+
+/**
+ * Handles DELETE requests for deleting a user.
+ * 
+ * @param {Request} req - The request object.
+ * @returns {Promise<Response>} - A promise that resolves to a Response object.
+ */
+export async function DELETE(req) {
+  try {
+    // Verify the token and get the user data
+    const tokenData = await verifyToken();
+    if (!tokenData.success) {
+      return Response.json(tokenData);
+    }
+
+    // Get the OTP and mode from the URL parameters
+    const { searchParams } = new URL(req.url);
+    const otp = searchParams.get("otp");
+    const mode = searchParams.get("mode");
+
+    // Validate the OTP and mode parameters
+    const ValidatorRules = {
+      otp: "required",
+      mode: "required",
+    };
+    const { error, status } = await new Promise((resolve) => {
+      validator({ otp, mode }, ValidatorRules, {}, (error, status) => {
+        resolve({ error, status });
+      });
+    });
+
+    if (!status) {
+      return Response.json({
+        success: false,
+        message: "validation error",
+        data: { ...error.errors },
+      });
+    }
+
+    // Check if the OTP is valid
+    const otpData = await prisma.otp.findFirst({
+      where: {
+        mode,
+      },
+    });
+
+    if (!otpData || decrypt(otpData.otp) !== otp) {
+      return Response.json({
+        success: false,
+        message: "Invalid OTP",
+        data: {},
+      });
+    }
+
+    // Check if the OTP is not expired
+    const thirtyMinutesAgo = Date.now() - 1000 * 60 * 30; // 30 minutes ago
+    if (otpData.updatedAt.getTime() < thirtyMinutesAgo) {
+      return Response.json({
+        success: false,
+        message: "OTP expired",
+        data: {},
+      });
+    }
+
+    // Delete the user's AWS face data
+    const awsFace = await prisma.user.findUnique({
+      where: {
+        id: tokenData.data.id,
+        status: 1,
+      },
+      include: {
+        awsFace: {
+          select: {
+            faceIds: true,
+          },
+          take: 1,
+
+        },
+      },
+    });
+
+
+    if (awsFace && awsFace.awsFace) {
+      await deleteFaces({ faceIds: awsFace.awsFace.at(0).faceIds })
+    }
+
+    // Delete the user from the database
+    await prisma.user.update({
+      where: {
+        id: tokenData.data.id,
+        status: 1,
+      },
+      data: {
+        status: 2,
+        awsFace: {
+          update: {
+            where: {
+              userId: tokenData.data.id,
+            },
+            data: {
+              status: 2
+            }
+          }
+        }
+      },
+
+    });
+
+
+    return Response.json({
+      message: "User deleted successfully",
+      success: true,
+      data: {},
+    });
+  } catch (error) {
+    console.error(error);
+    return Response.json({
+      message: error.message,
+      success: false,
+      data: {},
+    });
+  }
+}

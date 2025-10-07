@@ -1,0 +1,241 @@
+import { deleteFaces } from "@/helper/awsRekognition";
+import { verifyToken } from "@/helper/jwtConfig";
+import validator from "@/helper/validate";
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+
+/**
+ * Handles the GET request to fetch the users.
+ * Verifies the JWT token from the request headers and fetches the users.
+ * @returns {Response} A JSON response containing the users details or an error message.
+ */
+export async function GET(req) {
+  try {
+    // Verify the JWT token from the request headers
+    const tokenData = await verifyToken();
+
+    if (!tokenData.success) {
+      // If the token verification fails, return an error message
+      return Response.json(tokenData);
+    }
+
+    // Fetch the admin details from the database
+    const admin = await prisma.admin.findUnique({
+      where: {
+        id: tokenData.data.id,
+        status: 1,
+      },
+    });
+
+    if (!admin) {
+      // If the admin details are not found, return an error message
+      return Response.json({
+        message: "Admin not found",
+        success: false,
+        data: {},
+      });
+    }
+
+    // Get the URL query parameters
+    const { searchParams } = new URL(req.url);
+    const descending = searchParams.get("descending");
+    const page = searchParams.get("page");
+    const userId = searchParams.get("userId");
+    const search = searchParams.get("search");
+
+    if (userId) {
+      // Fetch the user details from the database
+      const user = await prisma.user.findUnique({
+        where: {
+          id: userId,
+        },
+        include: {
+          emergencyDetails: true,
+          childDetails: true,
+          userSteps: true,
+        },
+      });
+
+      const stepConfig = await prisma.stepsConfig.findFirst({
+        where: {
+          is_active: true,
+        },
+      });
+
+      user.stepConfig = stepConfig;
+      
+      return Response.json({
+        message: "User fetched successfully",
+        success: true,
+        data: user,
+      });
+    }
+
+    if (search != "") {
+      // Fetch the users from the database with the search query
+      const users = await prisma.user.findMany({
+        where: {
+          OR: [
+            { firstname: { contains: search, mode: "insensitive" } },
+            { lastname: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+            { mobileno: { contains: search, mode: 'insensitive' } },
+            { lastname: { contains: search, mode: 'insensitive' } },
+          ],
+        },
+        orderBy: {
+          firstname: descending == "true" ? "desc" : "asc",
+        },
+        include: {
+          emergencyDetails: true,
+        },
+      });
+
+      const transformedUsers = await Promise.all(
+        users.map(async (element, index) => {
+          return {
+            index: index + 1,
+            name: `${element.firstname} ${element.lastname}`,
+            ...element,
+            status: element.status,
+          };
+        })
+      );
+
+      return Response.json({
+        message: "Users fetched successfully",
+        success: true,
+        data: transformedUsers,
+        totalResults: users.length,
+      });
+    }
+
+    // Fetch the users from the database with pagination
+    const users = await prisma.user.findMany({
+      orderBy: {
+        firstname: descending == "true" ? "desc" : "asc",
+      },
+      skip: page ? (page - 1) * 10 : 0,
+      take: 10,
+      include: {
+        emergencyDetails: true,
+      },
+    });
+    const transformedUsers = await Promise.all(
+      users.map(async (element, index) => {
+        return {
+          index: index + 1,
+          name: `${element.firstname} ${element.lastname}`,
+          ...element,
+          status: element.status,
+        };
+      })
+    );
+
+    const total = await prisma.user.count();
+    return Response.json({
+      message: "Users fetched successfully",
+      success: true,
+      data: transformedUsers,
+      totalResults: total,
+    });
+  } catch (error) {
+    console.error(error);
+    return Response.json({
+      message: error.message,
+      success: false,
+      data: {},
+    });
+  }
+}
+
+/**
+ * Handles DELETE request to delete a user.
+ * 
+ * @param {Request} req - The request object.
+ * @returns {Promise<Response>} - A promise that resolves to a Response object.
+ */
+export async function DELETE(req) {
+  try {
+    // Verify the token and get the user data
+    const tokenData = await verifyToken();
+    if (!tokenData.success) {
+      return Response.json(tokenData);
+    }
+
+    // Get the user id from the URL parameters
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    // Define validation rules
+    const ValidatorRules = {
+      id: "required",
+    };
+
+    // Validate the user id parameter
+    const { error, status } = await new Promise((resolve) => {
+      validator({ id }, ValidatorRules, {}, (error, status) => {
+        resolve({ error, status });
+      });
+    });
+
+    // If validation fails, return an error response
+    if (!status) {
+      return Response.json({
+        success: false,
+        message: "validation error",
+        data: { ...error.errors },
+      });
+    }
+
+    // Find the user in the database, including the AWS face data
+    const awsFace = await prisma.user.findUnique({
+      where: {
+        id: id,
+        status: 1,
+      },
+      include: {
+        awsFace: {
+          select: {
+            faceIds: true,
+          },
+          take: 1,
+        },
+      },
+    });
+
+    // If the user has AWS face data, delete the faces from Rekognition
+    if (awsFace && awsFace.awsFace) {
+      try {
+        await deleteFaces({ faceIds: awsFace.awsFace.at(0).faceIds });
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    // Delete the user from the database, including the emergency details and AWS face data
+    await prisma.user.delete({
+      where: {
+        id: id,
+      },
+      include: {
+        emergencyDetails: true,
+        awsFace: true,
+      },
+    });
+
+    // Return a success response
+    return Response.json({
+      message: "User deleted successfully",
+      success: true,
+      data: {},
+    });
+  } catch (error) {
+    console.error(error);
+    return Response.json({
+      message: error.message,
+      success: false,
+      data: {},
+    });
+  }
+}

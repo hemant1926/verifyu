@@ -1,4 +1,5 @@
 import axios from "axios";
+import nodemailer from "nodemailer";
 /**
  * Sends an email using the Turbo SMTP API.
  *
@@ -9,7 +10,7 @@ import axios from "axios";
  * @param {string} mailOptions.html - The HTML content of the email.
  * @return {Promise<boolean>} - A promise that resolves to true if the email is sent successfully, false otherwise.
  */
-export async function sendMail(mailOptions) {
+export async function sendMailBkp(mailOptions) {
     try {
         // Construct the API URL and request body
         const apiUrl = "https://api.turbo-smtp.com/api/v2/mail/send";
@@ -26,6 +27,36 @@ export async function sendMail(mailOptions) {
         // Send the email using the API
         await axios.post(apiUrl, body);
         return true;
+    } catch (error) {
+        // Log any errors that occur and return false
+        console.error(error);
+        return false;
+    }
+}
+
+export async function sendMail(mailOptions) {
+    try {
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+              user: process.env.NODEMAILER_USERNAME,
+              pass: process.env.NODEMAILER_PASSWORD, // Use App Password, not your regular password
+            }
+        });
+
+        // Email options
+        const mailPayload = {
+          from: mailOptions.from,
+          to: mailOptions.to,
+          subject: mailOptions.subject,
+          text: mailOptions.text,
+          html: mailOptions.html
+        };
+        
+        // Send email
+        await transporter.sendMail(mailPayload);
+        return true;
+
     } catch (error) {
         // Log any errors that occur and return false
         console.error(error);

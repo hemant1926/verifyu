@@ -55,6 +55,7 @@ model user {
   userSubscriptions userSubscription[]
   coinRedemptions  coinRedemption[]
   coinRedemptionHistory coinRedemptionHistory[]
+  paymentIntents   paymentIntent[]
 
   @@index(name: "mobileno_idx", [mobileno])
   @@index(name: "email_idx", [email])
@@ -130,9 +131,9 @@ model stepsConfig {
   id                    String   @id @default(uuid()) @map("_id")
   threshold_steps       Int      @default(10000)
   coins_per_threshold   Int      @default(2)
-  coin_value_in_rupees  Int      @default(0)
+  coin_value_in_rupees  String   @default("0")
   max_coins_per_day     Int      @default(0)
-  coin_value_in_usd     Int      @default(0)
+  coin_value_in_usd     String   @default("0")
   reset_policy          String   @default("continuous")
   is_active             Boolean  @default(true)
   createddate           DateTime @default(now())
@@ -181,9 +182,14 @@ model subscriptionPlan {
   duration_days     Int
   features          Json[]
   is_active         Boolean  @default(true)
+  // Coin redemption fields
+  coins_required    Int?     // Number of coins required for this plan (null means no coin redemption)
+  max_coin_redemption_percent Float @default(100.0) // Maximum percentage of price that can be paid with coins
+  coin_value_ratio  Float?   // Value of 1 coin in currency units (e.g., 0.01 USD per coin)
   createddate       DateTime @default(now())
   updatedAt         DateTime @default(now()) @updatedAt
   userSubscriptions userSubscription[]
+  paymentIntents    paymentIntent[]
 }
 
 model userSubscription {
@@ -199,6 +205,10 @@ model userSubscription {
   paymentId         String?
   paymentMethod     String?
   autoRenew         Boolean           @default(false)
+  // Coin redemption fields
+  coins_used        Int?              @default(0) // Number of coins used for this subscription
+  coin_discount     Float?            @default(0) // Discount amount from coins
+  final_price       Float?            // Final price after coin discount
   createddate       DateTime          @default(now())
   updatedAt         DateTime          @default(now()) @updatedAt
 
@@ -249,4 +259,27 @@ model coinRedemptionHistory {
   @@index([userId], name: "coin_redemption_history_userId_idx")
   @@index([redemptionId], name: "coin_redemption_history_redemptionId_idx")
   @@index([action], name: "coin_redemption_history_action_idx")
+}
+
+model paymentIntent {
+  id                String   @id @default(uuid()) @map("_id")
+  userId            String
+  user              user     @relation(fields: [userId], references: [id])
+  planId            String
+  plan              subscriptionPlan @relation(fields: [planId], references: [id])
+  razorpayOrderId   String
+  razorpayPaymentId String?
+  amount            Float
+  currency          String   @default("INR")
+  status            String   @default("pending") // pending, completed, failed, cancelled
+  coinDiscount      Float    @default(0)
+  coinsUsed         Int      @default(0)
+  metadata          Json?
+  createddate       DateTime @default(now())
+  completedAt       DateTime?
+
+  @@index([userId], name: "payment_intent_userId_idx")
+  @@index([planId], name: "payment_intent_planId_idx")
+  @@index([status], name: "payment_intent_status_idx")
+  @@index([razorpayOrderId], name: "payment_intent_razorpay_order_idx")
 }

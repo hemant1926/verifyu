@@ -188,6 +188,22 @@ export async function GET() {
         childDetails: true,
         customerSupport: true,
         awsFace: true,
+        userSteps : {
+          select: {
+            total_steps: true,
+            current_steps: true,
+            total_coins: true,
+            last_threshold: true,
+            redeemed_coins: true,
+            available_coins: true,
+            redeemed_limit_per_day: true,
+            redeemed_today: true,
+            is_redeem_blocked: true,
+            block_reason: true,
+            last_redeem_at: true,
+            pending_redeem: true,
+          }
+        }
       },
     });
 
@@ -202,14 +218,6 @@ export async function GET() {
 
     // Initialize coin-related fields with safe defaults
     // Note: userSteps relation is not available, using default values
-    userDetails.redeemed_coins          = 0;
-    userDetails.available_coins         = 0;
-    userDetails.redeemed_limit_per_day  = 0;
-    userDetails.redeemed_today          = 0;
-    userDetails.is_redeem_blocked       = false;
-    userDetails.block_reason            = "";
-    userDetails.last_redeem_at          = "";
-    userDetails.pending_redeem          = 0;
 
     // Return the user details in the response
     return Response.json({

@@ -86,9 +86,6 @@ export async function GET(req) {
       _count: {
         id: true,
       },
-      _sum: {
-        // Note: We can't sum plan.price directly, so we'll calculate this separately
-      },
     });
 
     // Get total amount spent (this is a simplified calculation)
